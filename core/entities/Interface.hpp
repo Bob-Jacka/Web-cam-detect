@@ -16,12 +16,27 @@
 #include <QMediaDevices>
 #include <QCamera>
 #include <QMediaCaptureSession>
+#include <QVideoSink>
+#include <QVideoFrame>
+#include <QAbstractVideoBuffer>
+#include <opencv2/opencv.hpp>
 
 #define UI_MSG(Window_name, Window_txt) \
 QMessageBox(QMessageBox::Icon::Warning, Window_name, Window_txt).exec(); \
 return;                                 \
 
 QT_BEGIN_NAMESPACE
+
+auto adapt_qt_frame = [](const QVideoFrame &frame) -> cv::Mat {
+    QVideoFrame copy(frame);
+    if (frame.isValid()) {
+        cv::Mat frameYUV = cv::Mat(copy.height() + copy.height() / 2, copy.width(), CV_8UC1, (void *) copy.bits(1));
+        cv::Mat frameRGB;
+        cvtColor(frameYUV, frameRGB, cv::COLOR_YUV2BGRA_I420);
+        return frameRGB;
+    }
+    return {};
+};
 
 class Ui_MainWindow {
 public:
@@ -39,6 +54,7 @@ public:
     QStatusBar *statusbar;
     QCamera *camera;
     QMediaCaptureSession capture_session;
+    QVideoSink *v_sink;
     QList<QCameraDevice> cameras;
 
     void setup_Ui(QMainWindow *MainWindow) {
@@ -75,18 +91,19 @@ public:
 
         frame = new QFrame(centralwidget);
         frame->setObjectName("frame");
-        frame->setGeometry(QRect(20, 20, 741, 471));
+        frame->setGeometry(QRect(20, 20, 740, 470));
         frame->setFrameShape(QFrame::Shape::Box);
         frame->setFrameShadow(QFrame::Shadow::Raised);
         frame->setLineWidth(5);
         frame->setMidLineWidth(0);
         video_wid = new QVideoWidget(frame);
         video_wid->setObjectName("video_wid");
-        video_wid->setGeometry(QRect(10, 10, 721, 451));
+        video_wid->setGeometry(QRect(10, 10, 720, 450));
+        v_sink = video_wid->videoSink();
         MainWindow->setCentralWidget(centralwidget);
         menubar = new QMenuBar(MainWindow);
         menubar->setObjectName("menubar");
-        menubar->setGeometry(QRect(0, 0, 964, 23));
+        menubar->setGeometry(QRect(0, 0, 960, 25));
         MainWindow->setMenuBar(menubar);
         statusbar = new QStatusBar(MainWindow);
         statusbar->setObjectName("statusbar");
@@ -107,15 +124,16 @@ public:
         //turn on camera func
         QPushButton::connect(detect_btn, &QPushButton::clicked, [this]() {
             if (cameras.count() > 0) {
-                if (camera != nullptr) {
-                    if (not camera->isActive()) {
-                        capture_session.setCamera(camera);
-                    }
-                    camera->start();
-                    return;
-                } else {
-                    UI_MSG("Error", "Camera device is null")
+                if (camera == nullptr) {
+                    camera = new QCamera(cameras[0]);
                 }
+                capture_session.setCamera(camera);
+                capture_session.setVideoOutput(video_wid);
+                capture_session.setVideoOutput(v_sink);
+                camera->start();
+                video_wid->show();
+
+                return;
             } else {
                 UI_MSG("Critical Error", "There are no available camera devices")
             }
@@ -124,9 +142,11 @@ public:
         //Disconnect camera
         QPushButton::connect(disconnect_camera_btn, &QPushButton::clicked, [this]() {
             if (camera->isActive()) {
+                video_wid->close();
+                capture_session.setVideoOutput(nullptr);
+                capture_session.setCamera(nullptr);
                 camera->stop();
                 camera->disconnect();
-                camera = nullptr;
                 return;
             } else {
                 UI_MSG("Critical Error", "Camera is stopped")
