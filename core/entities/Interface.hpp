@@ -17,7 +17,6 @@
 #include <QCamera>
 #include <QMediaCaptureSession>
 
-///Get ui message using qmessage box
 #define UI_MSG(Window_name, Window_txt) \
 QMessageBox(QMessageBox::Icon::Warning, Window_name, Window_txt).exec(); \
 return;                                 \
@@ -28,23 +27,26 @@ class Ui_MainWindow {
 public:
     QWidget *centralwidget;
     QWidget *verticalLayoutWidget;
-    QVBoxLayout *buttons; ///main layout for buttons
-
-    QPushButton *detect_btn; ///detect edges object in video
-    QPushButton *disconnect_camera_btn;
-
     QFrame *frame;
+
+    QVBoxLayout *buttons; ///main layout for buttons
+    QPushButton *detect_btn; ///detect edges object in video
+
+    QPushButton *disconnect_camera_btn;
+    QPushButton *available_cameras_btn;
     QVideoWidget *video_wid;
     QMenuBar *menubar;
     QStatusBar *statusbar;
     QCamera *camera;
+    QMediaCaptureSession capture_session;
+    QList<QCameraDevice> cameras;
 
     void setup_Ui(QMainWindow *MainWindow) {
         if (MainWindow->objectName().isEmpty()) {
             MainWindow->setObjectName("MainWindow");
         }
-        auto available_cameras = QMediaDevices::videoInputs();
-        camera = new QCamera(available_cameras[0]);
+        cameras = QMediaDevices::videoInputs();
+        camera = new QCamera(cameras[0]);
 
         MainWindow->resize(970, 580);
         MainWindow->setFixedSize(970, 580); //do not resize window
@@ -52,7 +54,7 @@ public:
         centralwidget->setObjectName("centralwidget");
         verticalLayoutWidget = new QWidget(centralwidget);
         verticalLayoutWidget->setObjectName("verticalLayoutWidget");
-        verticalLayoutWidget->setGeometry(QRect(780, 19, 160, 227));
+        verticalLayoutWidget->setGeometry(QRect(780, 20, 160, 230));
         buttons = new QVBoxLayout(verticalLayoutWidget);
         buttons->setSpacing(0);
         buttons->setObjectName("buttons");
@@ -66,6 +68,10 @@ public:
         disconnect_camera_btn = new QPushButton(verticalLayoutWidget);
         disconnect_camera_btn->setObjectName("close_btn");
         buttons->addWidget(disconnect_camera_btn);
+
+        available_cameras_btn = new QPushButton(verticalLayoutWidget);
+        available_cameras_btn->setObjectName("available_cams");
+        buttons->addWidget(available_cameras_btn);
 
         frame = new QFrame(centralwidget);
         frame->setObjectName("frame");
@@ -87,32 +93,29 @@ public:
         MainWindow->setStatusBar(statusbar);
 
         translate_Ui(MainWindow);
-
         QMetaObject::connectSlotsByName(MainWindow);
-    } // setup_Ui
+    }
 
-    /**
-     * Translate text on buttons
-     * @param MainWindow
-     */
     void translate_Ui(QMainWindow *MainWindow) const {
         MainWindow->setWindowTitle(QCoreApplication::translate("MainWindow", "Web cam detect", nullptr));
         detect_btn->setText(QCoreApplication::translate("MainWindow", "Turn on camera", nullptr));
         disconnect_camera_btn->setText(QCoreApplication::translate("MainWindow", "Disconnect camera", nullptr));
-    } // translate_Ui
+        available_cameras_btn->setText(QCoreApplication::translate("MainWindow", "Available cameras", nullptr));
+    }
 
-    /**
-     * Setup ui callback
-     */
     void setup_callbacks() {
+        //turn on camera func
         QPushButton::connect(detect_btn, &QPushButton::clicked, [this]() {
-            if (QMediaDevices::videoInputs().count() > 0) {
-                if (not camera->isActive()) {
-                    QMediaCaptureSession capture_session;
-                    capture_session.setCamera(camera);
+            if (cameras.count() > 0) {
+                if (camera != nullptr) {
+                    if (not camera->isActive()) {
+                        capture_session.setCamera(camera);
+                    }
+                    camera->start();
+                    return;
+                } else {
+                    UI_MSG("Error", "Camera device is null")
                 }
-                camera->start();
-                return;
             } else {
                 UI_MSG("Critical Error", "There are no available camera devices")
             }
@@ -128,6 +131,16 @@ public:
             } else {
                 UI_MSG("Critical Error", "Camera is stopped")
             }
+        });
+
+        //Available cameras
+        QPushButton::connect(available_cameras_btn, &QPushButton::clicked, [this]() {
+            QString tmp_str;
+            for (const auto &cam: cameras) {
+                tmp_str += cam.description() + "\n";
+            }
+            QMessageBox(QMessageBox::Icon::NoIcon, "Available cameras", tmp_str).exec();
+            return;
         });
     }
 };
