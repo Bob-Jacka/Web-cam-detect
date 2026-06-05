@@ -1,21 +1,85 @@
-#include "core/entities/Interface.hpp"
+#include <opencv2/opencv.hpp>
+#include <QApplication>
+#include <QLabel>
+#include <QVBoxLayout>
+#include <QWidget>
+#include <QThread>
+#include <QImage>
+#include <QTimer>
+#include <atomic>
 
-QT_BEGIN_NAMESPACE
+class CameraThread : public QThread {
+Q_OBJECT
+public:
+    void run() override {
+#ifdef Q_OS_LINUX
+        cv::VideoCapture cap("/dev/video0", cv::CAP_V4L2);
+#else
+#error "Install normal system (linux) or go away"
+#endif
+        if (!cap.isOpened()) {
+            emit error("Cannot open camera object");
+            return;
+        }
 
-int main(int argc, char *argv[]) {
-    QApplication a(argc, argv);
+        cv::Mat frame;
+        while (!m_stop) {
+            cap >> frame;
+            if (frame.empty()) {
+                continue;
+            }
 
-    auto window = std::make_unique<Ui::MainWindow>();
-    auto main_win = std::make_unique<QMainWindow>();
+            cv::Mat rgb;
+            cv::cvtColor(frame, rgb, cv::COLOR_BGR2RGB);
 
-    window->setup_Ui(main_win.get());
-    window->setup_callbacks();
+            QImage image(rgb.data, rgb.cols, rgb.rows, rgb.step, QImage::Format_RGB888);
 
-    if (main_win) {
-        main_win->show();
+            emit frameReady(image.copy());
+        }
     }
 
-    return QApplication::exec();
+    void stop() { m_stop = true; }
+
+signals:
+
+    void frameReady(const QImage &frame);
+
+    void error(const QString &msg);
+
+private:
+    std::atomic<bool> m_stop{false};
+};
+
+int main(int argc, char *argv[]) {
+    QApplication app(argc, argv);
+
+    QWidget window;
+    auto layout = new QVBoxLayout(&window);
+    QLabel label;
+    label.setAlignment(Qt::AlignCenter);
+    layout->addWidget(&label);
+
+    //Set up callbacks:
+    CameraThread camera;
+    QObject::connect(&camera, &CameraThread::frameReady, [&](const QImage &img) -> void {
+        label.setPixmap(QPixmap::fromImage(img).scaled(
+                label.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    });
+    QObject::connect(&camera, &CameraThread::error, [&](const QString &msg) -> void {
+        label.setText("Error: " + msg);
+    });
+
+    camera.start();
+
+    window.resize(640, 480);
+    window.show();
+
+    int result = app.exec();
+
+    camera.stop();
+    camera.wait();
+
+    return result;
 }
 
-QT_END_NAMESPACE
+#include "main.moc"

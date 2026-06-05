@@ -25,7 +25,6 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 
 add_executable(Web_cam_detect
         main.cpp
-        core/entities/Interface.hpp
 )
 
 message("Using UNIX target link")
